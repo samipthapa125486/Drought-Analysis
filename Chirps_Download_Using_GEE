@@ -1,0 +1,75 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Nov  4 18:58:38 2025
+
+@author: Samip
+"""
+
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import geopandas as gpd
+import xarray as xr
+import rioxarray
+
+
+#initializing the google earthengine
+import ee
+import geemap
+ee.Initialize()
+
+#importing the shapefile
+basin = geemap.shp_to_ee("E:/Drought Analysis/River_Basin.shp")
+basin_extent = basin.geometry().bounds()
+
+#output folder for the monthly sums
+out_dir = 'E:/Thesis_Datasets/CHIRPS_DATASETS-MONTHLY'
+os.makedirs(out_dir, exist_ok=True)
+
+#Date Range 
+start_date ='1995-01-01' 
+end_date = '2024-12-31'
+
+#accessing chirps daily datasets
+chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")\
+    .filterDate(start_date, end_date)
+
+#Mapping the dailydatasets to monthly
+def monthly_sum(year, month):
+    start = ee.Date.fromYMD(year, month, 1)
+    end = start.advance(1, 'month')
+    monthly_img = chirps.filterDate(start, end).sum().clip(basin_extent)
+    monthly_img = monthly_img.set('year', year)
+    monthly_img = monthly_img.set('month', month)
+    monthly_img = monthly_img.set('system:index', f"{year}-{str(month).zfill(2)}")
+    return monthly_img
+
+#start and end year
+start = ee.Date(start_date)
+end = ee.Date(end_date)
+start_year = start.get('year').getInfo()
+end_year = end.get('year').getInfo()
+
+#function call
+years = list(range(start_year, end_year + 1))
+months = list(range(1, 13))
+
+#monthly image collection
+monthly_images = []
+for y in years:
+    for m in months:
+        img = monthly_sum(y, m)
+        monthly_images.append(img)
+
+monthly_collection = ee.ImageCollection(monthly_images)
+
+#image collection 
+geemap.ee_export_image_collection(
+    monthly_collection,
+    out_dir=out_dir,
+    region=basin.geometry(),
+    scale=5000,
+    file_per_band=False
+)
+
+
